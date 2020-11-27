@@ -1,3 +1,4 @@
+const { threadId } = require("worker_threads");
 const lexer = require("./lexer");
 
 class Tokenizer {
@@ -29,9 +30,9 @@ class Compiler {
 
     emit(cmd) {
         if(cmd instanceof Object) {
-            this.output += `<${token.type}> ${token_val(token)} </${token.type}>\n`;
+            this.output += `<${cmd.type}> ${token_val(cmd)} </${cmd.type}>\n`;
         }
-        this.output += cmd;
+        else this.output += cmd;
     }
 
     expect(val, type) {
@@ -64,19 +65,131 @@ class Compiler {
         curr = this.tok.peek();
         while(curr.value == "constructor" || 
               curr.value == "function" || 
-              curr.value == "method"
+              curr.value == "method" 
             )
             this.compileSubroutineDec();    
         this.expect("}");
         this.emit("</class>\n");
     }
 
+    compileType() {
+        let curr = this.tok.next();
+        if(curr.value == "int") this.expect("int");
+        else if(curr.value == "char") this.expect("char");
+        else if(curr.value == "boolean") this.expect("boolean");
+        else this.expect(true,"identifier");
+    }
+
     compileClassVarDec() {
         this.emit("<classVarDec>\n");
-        this.tok.next();
+        this.emit(this.tok.next());
+        this.compileType();
+        const varName = this.expect(true,"identifier").value;
+        let curr = this.tok.peek();
+        while(curr.value != ";") {
+            this.expect(",");
+            this.expect(true,"identifier");
+            curr = this.tok.peek();
+        }
+        this.expect(";");
+        this.emit("</classVarDec>\n");
+    }
+
+    compileParameterList() {
+        this.emit("<parameterList>\n");
+        this.expect("(");
+        this.compileType();
+        this.expect(true,"identifier");
+        let curr = this.tok.peek();
+        while(curr.value != ")") {
+            this.expect(",");
+            this.compileType();
+            this.expect(true,"identifier");
+            curr = this.tok.peek();
+        }
+        this.expect(")");
+        this.emit("</parameterList>\n");
+    }
+
+    stp = {
+        "let": "compileLetStatement",
+        "if": "compileIfStatement",
+        "while": "compileWhileStatement",
+        "do": "compileDoStatement",
+        "return": "compileReturnStatement"
+    };
+
+    compileLetStatment() {
 
     }
 
+    compileIfStatment() {
+        
+    }
+
+    compileWhileStatment() {
+        
+    }
+
+    compileDoStatment() {
+        this.expect("do");
+        
+    }
+
+    compileReturnStatment() {
+        this.expect("return");
+        this.compileExpression();
+        this.expect(";");
+    }
+
+    compileStatements() {
+        this.emit("<statements>\n");
+        let curr = this.tok.peek();
+        while(stp in curr.value) {
+            this[stp[curr.value]]();
+        }
+        this.emit("</statements>\n");
+    }
+
+    compileVarDec() {
+        this.emit("<varDec>\n");
+        this.expect("var");
+        this.compileType();
+        this.expect(true,"identifier");
+        let curr = this.tok.peek();
+        while(curr.value != ";") {
+            this.expect(",");
+            this.expect(true,"identifier");
+            curr = this.tok.peek();
+        }
+        this.expect(";");
+        this.emit("</varDec>\n");
+    }
+
+    compileSubroutineBody() {
+        this.emit("<subroutineBody>\n");
+        this.expect("{");
+        let curr = this.tok.peek();
+        while(curr.value == "var") {
+            this.compileVarDec();
+            curr = this.tok.peek();
+        }
+        this.compileStatements();
+        this.expect("}");
+        this.emit("</subroutineBody>\n");
+    }
+
+    compileSubroutineDec() {
+        this.emit("<subroutineDec>\n");
+        this.emit(this.tok.next());
+        let curr = this.tok.peek();
+        if(curr.value == "void") this.tok.next();
+        else this.compileType();
+        const subName = this.expect(true,"identifier").value;
+        this.compileParameterList();
+        this.compileSubroutineBody();
+        this.emit("</subroutineDec>\n");
+    }
 
 }
 
