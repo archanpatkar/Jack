@@ -72,7 +72,7 @@ class Compiler {
     }
 
     compileClassVarDec() {
-        this.emit("")
+        this.emit("<classVarDec>\n");
         this.tok.next();
 
     }
