@@ -39,7 +39,6 @@ function tokenize(string) {
     let ch;
     let curr = 0;
     while (curr < string.length) {
-        console.log(tokens);
         ch = string[curr]
         if (isWhite(ch)) curr++;
         else if(ch == '"') {
@@ -49,12 +48,28 @@ function tokenize(string) {
                 buff += ch
                 ch = string[++curr]
             }
-            ch = string[++curr]
+            curr++;
+            // ch = string[++curr]
             tokens.push(token("StringConstant", buff))
         }
         else if (symbols.includes(ch)) {
             curr++;
-            tokens.push(token("symbol", ch));
+            if(ch === "/") {
+                if(string[curr] === "/") {
+                    ch = string[++curr]
+                    while(ch != "\n") ch = string[++curr];
+                    curr++;
+                }
+                else if(string[curr] === "*") {
+                    ch = string[++curr]
+                    ch = string[++curr]
+                    while(ch !== "*" && string[curr+1] !== "/") ch = string[++curr];
+                    curr++;
+                    curr++;
+                }
+                else tokens.push(token("symbol", ch));
+            }
+            else tokens.push(token("symbol", ch));
         }
         else if (isNumber(ch)) {
             n = "" + ch;
@@ -65,7 +80,7 @@ function tokenize(string) {
             }
             tokens.push(token("integerConstant", parseInt(n)));
         }
-        else if (isAlphabet(ch)) {
+        else if (isAlphabet(ch) || ch == "_") {
             n = "" + ch;
             ch = string[++curr];
             while (isAlphabet(ch) || ch == "_") {
