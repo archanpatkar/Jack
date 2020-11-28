@@ -4,7 +4,7 @@ const tokenizer = require("./lexer");
 function main(args)
 {
     const name = args[0].split(".")[0];
-    const code = fs.readFileSync(`${__dirname}/${args[0]}`).toString();
+    const code = fs.readFileSync(`./${args[0]}`).toString();
     console.log(code);
     const tokens = tokenizer(code);
     console.log(tokens);
@@ -21,7 +21,7 @@ function main(args)
         if(token.type != "EOF") output += `<${token.type}> ${token_val(token)} </${token.type}>\n`;
         else break;
     output += "</tokens>";
-    fs.writeFileSync(`${__dirname}/${name}T.xml`,output);
+    fs.writeFileSync(`./${name}T.xml`,output);
 }
 
 
