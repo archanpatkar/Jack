@@ -3,13 +3,14 @@ const lexer = require("./lexer");
 class Tokenizer {
     constructor(code) {
         this.tokens = lexer(code);
+        fs.writeFileSync("toks.json",JSON.stringify(this.tokens));
         this.curr = this.tokens[0];
         this.tokens.shift();
     }
 
     peek(n=0) { 
         // console.log(this.curr);
-        if(n) return this.tokens[0+n]; 
+        if(n) return this.tokens[n-1]; 
         return this.curr;
     }
 
@@ -118,7 +119,6 @@ class Compiler {
 
     compileParameterList() {
         this.emit("<parameterList>\n");
-        this.expect("(");
         if(this.tok.peek().value !== ")") {
             this.compileType();
             this.expect(true,"identifier");
@@ -130,7 +130,6 @@ class Compiler {
                 curr = this.tok.peek();
             }
         }
-        this.expect(")");
         this.emit("</parameterList>\n");
     }
 
@@ -251,7 +250,9 @@ class Compiler {
         if(curr.value == "void") this.emit(this.tok.next());
         else this.compileType();
         const subName = this.expect(true,"identifier").value;
+        this.expect("(");
         this.compileParameterList();
+        this.expect(")");
         this.compileSubroutineBody();
         this.emit("</subroutineDec>\n");
     }
@@ -262,9 +263,11 @@ class Compiler {
 
     compileExpressionList() {
         this.emit("<expressionList>\n");
-        if(this.tok.peek().value !== ")") {
+        let next = this.tok.peek();
+        if(next.value !== ")") {
             this.compileExpression();
-            let next = this.tok.peek();
+            // this.expect(",");
+            next = this.tok.peek();
             while(next.value !== ")") {
                 this.expect(",");
                 this.compileExpression();
@@ -280,10 +283,13 @@ class Compiler {
         console.log(name1);
         const next = this.tok.peek();
         if(next.value == ".") {
+            console.log("here2")
             this.expect(".");
             const name2 = this.expect(true,"identifier");
         }
-        console.log(this.tok.tokens);
+        console.log("-------------*_--------")
+        // console.log(this.tok.tokens);
+        console.log("final graveyard")
         this.expect("(");
         this.compileExpressionList();
         this.expect(")");
@@ -291,9 +297,11 @@ class Compiler {
 
     compileTerm() {
         this.emit("<term>\n");
-        let curr = this.tok.peek()
+        let curr = this.tok.peek();
         if(curr.value == "(") {
-            this.expect("(");
+            console.log("here!");
+            console.log(curr);
+            this.expect("(","symbol");
             this.compileExpression();
             this.expect(")");
         }
@@ -343,10 +351,10 @@ const fs = require("fs");
 function main(args)
 {
     const name = args[0].split(".")[0];
-    const code = fs.readFileSync(`${__dirname}/${args[0]}`).toString();
+    const code = fs.readFileSync(`./${args[0]}`).toString();
     const compiler = new Compiler(code);
     const output = compiler.compile();
-    fs.writeFileSync(`${__dirname}/${name}.xml`,output);
+    fs.writeFileSync(`./${name}.xml`,output);
 }
 
 main(process.argv.slice(2));
