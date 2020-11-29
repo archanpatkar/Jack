@@ -50,7 +50,7 @@ function tokenize(string) {
             }
             curr++;
             // ch = string[++curr]
-            tokens.push(token("StringConstant", buff))
+            tokens.push(token("stringConstant", buff))
         }
         else if (symbols.includes(ch)) {
             curr++;
@@ -61,10 +61,9 @@ function tokenize(string) {
                     curr++;
                 }
                 else if(string[curr] === "*") {
-                    ch = string[++curr]
-                    ch = string[++curr]
-                    while(ch !== "*" && string[curr+1] !== "/") ch = string[++curr];
                     curr++;
+                    ch = string[++curr];
+                    while(!(string[curr-1] == "*" && ch == "/")) ch = string[++curr];
                     curr++;
                 }
                 else tokens.push(token("symbol", ch));
