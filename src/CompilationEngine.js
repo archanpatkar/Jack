@@ -1,15 +1,29 @@
+const fs = require("fs");
 const lexer = require("./lexer");
+
+const special = ["<",">",'"',"&"];
+const map = {
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "&": "&amp;"
+}
+const token_val = (token) => special.includes(token.value)?map[token.value]:token.value;
 
 class Tokenizer {
     constructor(code) {
         this.tokens = lexer(code);
-        fs.writeFileSync("toks.json",JSON.stringify(this.tokens));
+        let output = "<tokens>\n";
+        for(let token of this.tokens) 
+            if(token.type != "EOF") output += `<${token.type}> ${token_val(token)} </${token.type}>\n`;
+            else break;
+        output += "</tokens>";
+        this.out = output;
         this.curr = this.tokens[0];
         this.tokens.shift();
     }
 
     peek(n=0) { 
-        // console.log(this.curr);
         if(n) return this.tokens[n-1]; 
         return this.curr;
     }
@@ -21,28 +35,28 @@ class Tokenizer {
     }
 }
 
-const special = ["<",">",'"',"&"];
-const map = {
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "&": "&amp;"
-}
-const token_val = (token) => special.includes(token.value)?map[token.value]:token.value;
-
+const termend = [")","}","]",";",","];
+const bop = ["+","-","*","/","&","|","<",">","="]
+const uop = ["-","~"]
+const kwc = ["true","false","null","this"]
+const stp = {
+    "let": "compileLetStatement",
+    "if": "compileIfStatement",
+    "while": "compileWhileStatement",
+    "do": "compileDoStatement",
+    "return": "compileReturnStatement"
+};
 
 class Compiler {
     constructor(code) {
         if(code) {
             this.code = code;
             this.tok = new Tokenizer(code);
-            // console.log(this.tok.tokens);
         }
         this.output = "";
     }
 
     emit(cmd) {
-        console.log(cmd);
         if(cmd instanceof Object) {
             this.output += `<${cmd.type}> ${token_val(cmd)} </${cmd.type}>\n`;
         }
@@ -50,17 +64,12 @@ class Compiler {
     }
 
     expect(val, type) {
-        console.log("here!");
-        // console.log(val);
-        // console.log(type);
         const curr = this.tok.next();
         if(curr.value == val || curr.type == type) 
         {
             this.emit(curr);
             return curr;
         }
-        console.log(curr);
-        fs.writeFileSync(`${__dirname}/logtemp.xml`,this.output);
         throw new SyntaxError(`Expected ${type?type:""} ${val}`);
     }
 
@@ -133,14 +142,6 @@ class Compiler {
         this.emit("</parameterList>\n");
     }
 
-    stp = {
-        "let": "compileLetStatement",
-        "if": "compileIfStatement",
-        "while": "compileWhileStatement",
-        "do": "compileDoStatement",
-        "return": "compileReturnStatement"
-    };
-
     compileLetStatement() {
         this.emit("<letStatement>\n");
         this.expect("let");
@@ -183,7 +184,7 @@ class Compiler {
         this.expect(")");
         this.expect("{");
         this.compileStatements();
-        this.expect("{");
+        this.expect("}");
         this.emit("</whileStatement>\n");
     }
 
@@ -206,8 +207,8 @@ class Compiler {
     compileStatements() {
         this.emit("<statements>\n");
         let curr = this.tok.peek();
-        while(curr.value in this.stp) {
-            this[this.stp[curr.value]]();
+        while(curr.value in stp) {
+            this[stp[curr.value]]();
             curr = this.tok.peek();
         }
         this.emit("</statements>\n");
@@ -233,11 +234,9 @@ class Compiler {
         this.expect("{");
         let curr = this.tok.peek();
         while(curr.value == "var") {
-            console.log("here i come");
             this.compileVarDec();
             curr = this.tok.peek();
         }
-        console.log("body of statements");
         this.compileStatements();
         this.expect("}");
         this.emit("</subroutineBody>\n");
@@ -257,9 +256,7 @@ class Compiler {
         this.emit("</subroutineDec>\n");
     }
 
-    bop = ["+","-","*","/","&","|","<",">","="]
-    uop = ["-","~"]
-    kwc = ["true","false","null","this"]
+
 
     compileExpressionList() {
         this.emit("<expressionList>\n");
@@ -278,18 +275,12 @@ class Compiler {
     }
 
     compileSubroutineCall() {
-        console.log("call compile");
         const name1 = this.expect(true,"identifier");
-        console.log(name1);
         const next = this.tok.peek();
         if(next.value == ".") {
-            console.log("here2")
             this.expect(".");
             const name2 = this.expect(true,"identifier");
         }
-        console.log("-------------*_--------")
-        // console.log(this.tok.tokens);
-        console.log("final graveyard")
         this.expect("(");
         this.compileExpressionList();
         this.expect(")");
@@ -299,13 +290,11 @@ class Compiler {
         this.emit("<term>\n");
         let curr = this.tok.peek();
         if(curr.value == "(") {
-            console.log("here!");
-            console.log(curr);
             this.expect("(","symbol");
             this.compileExpression();
             this.expect(")");
         }
-        else if(this.uop.includes(curr.value)) {
+        else if(uop.includes(curr.value)) {
             this.expect(curr.value);
             this.compileTerm();
         }
@@ -313,11 +302,11 @@ class Compiler {
             this.expect(true,"integerConstant");
         else if(curr.type == "stringConstant") 
             this.expect(true,"stringConstant");
-        else if(this.kwc.includes(curr.value)) 
+        else if(kwc.includes(curr.value)) 
             this.expect(true,"keyword");
         else if(curr.type == "identifier") {
             let temp = this.tok.peek(1);
-            if(temp.value == "(") this.compileSubroutineCall()
+            if(temp.value == "(" || temp.value == ".") this.compileSubroutineCall()
             else if(temp.value == "[") {
                 const vname = this.expect(true,"identifier");
                 this.expect("[");
@@ -330,15 +319,14 @@ class Compiler {
         this.emit("</term>\n");
     }
 
-    termend = [")","}","]",";",","];
 
     compileExpression() {
         this.emit("<expression>\n");
         this.compileTerm();
         let curr = this.tok.peek();
-        while(this.bop.includes(curr.value)) {
+        while(bop.includes(curr.value)) {
             this.expect(curr.value,"symbol");
-            if(!this.termend.includes(this.tok.peek().value)) 
+            if(!termend.includes(this.tok.peek().value)) 
                 this.compileTerm();
             curr = this.tok.peek();
         }
@@ -346,17 +334,34 @@ class Compiler {
     }
 }
 
-
-const fs = require("fs");
-function main(args)
-{
-    const name = args[0].split(".")[0];
-    const code = fs.readFileSync(`./${args[0]}`).toString();
-    const compiler = new Compiler(code);
-    const output = compiler.compile();
-    fs.writeFileSync(`./${name}.xml`,output);
+function main(args) {
+    if(fs.existsSync(args[0]) && fs.lstatSync(args[0]).isDirectory()) {
+        const files = fs.readdirSync(args[0]).filter(f => f.endsWith(".jack"));
+        const path = args[0].endsWith("/")?args[0]:`${args[0]}/`;
+        console.log("Reading...");
+        const data = files.map(file => {
+            console.log(file);
+            const filename = file.split(".")[0];
+            const code = fs.readFileSync(`${path}${file}`).toString();
+            const compiler = new Compiler(code);
+            const output = compiler.compile();
+            fs.writeFileSync(`${path}${filename}T.xml`,compiler.tok.out);
+            fs.writeFileSync(`${path}${filename}.xml`,output);
+        });
+    }
+    else {
+        console.log("Reading...");
+        const dirs = args[0].split("/");
+        const filename = dirs[dirs.length-1].split(".")[0];
+        const code = fs.readFileSync(args[0]).toString();
+        const compiler = new Compiler(code);
+        const output = compiler.compile();
+        dirs.pop();
+        const path = dirs.join("/");
+        fs.writeFileSync(`${path}/${filename}T.xml`,compiler.tok.out);
+        fs.writeFileSync(`${path}/${filename}.xml`,output);
+    }
 }
 
 main(process.argv.slice(2));
-
 module.exports = Compiler;
