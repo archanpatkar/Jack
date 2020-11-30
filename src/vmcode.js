@@ -73,3 +73,4 @@ class VMEmitter {
         this.output.push(returnop());
     }
 }
+module.exports = VMEmitter;
