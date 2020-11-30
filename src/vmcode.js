@@ -65,6 +65,10 @@ class VMEmitter {
         this.output.push(ifgoto(lab));
     }
 
+    emitFunction(name,local) {
+        this.output.push(functiondef(name,local));
+    }
+
     emitCall(name,args) {
         this.output.push(call(name,args));
     }

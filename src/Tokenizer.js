@@ -49,6 +49,7 @@ function tokenize(string) {
                 ch = string[++curr]
             }
             curr++;
+            // ch = string[++curr]
             tokens.push(token("stringConstant", buff))
         }
         else if (symbols.includes(ch)) {
@@ -60,10 +61,9 @@ function tokenize(string) {
                     curr++;
                 }
                 else if(string[curr] === "*") {
-                    ch = string[++curr]
-                    ch = string[++curr]
-                    while(ch !== "*" && string[curr+1] !== "/") ch = string[++curr];
                     curr++;
+                    ch = string[++curr];
+                    while(!(string[curr-1] == "*" && ch == "/")) ch = string[++curr];
                     curr++;
                 }
                 else tokens.push(token("symbol", ch));
@@ -98,8 +98,7 @@ function tokenize(string) {
 
 class Tokenizer {
     constructor(code) {
-        this.tokens = lexer(code);
-        this.out = output;
+        this.tokens = tokenize(code);
         this.curr = this.tokens[0];
         this.tokens.shift();
     }

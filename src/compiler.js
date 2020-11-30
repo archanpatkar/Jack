@@ -1,3 +1,4 @@
+const fs = require("fs");
 const Tokenizer = require("./tokenizer");
 const SymbolTable = require("./symtab");
 const VMEmitter = require("./vmcode");
@@ -42,8 +43,8 @@ class Compiler {
     }
 
     compile(code) {
-        if(!this.code || code) this.setup(code);
-        else throw new Error("No code given!");
+        if(code) this.setup(code);
+        // else throw new Error("No code given!");
         this.compileClass();
         return this.vm.compgen();
     }
@@ -52,18 +53,17 @@ class Compiler {
         this.expect("class");
         this.className = this.expect(true,"identifier").value;
         this.expect("{");
-        let curr = this.tok.peek();
-        while(curr.value == "static" || curr.value == "field") {
+        let curr = this.tok.peek().value;
+        while(curr == "static" || curr == "field") {
             this.compileClassVarDec();
-            curr = this.tok.peek();
+            curr = this.tok.peek().value;
         }
-        curr = this.tok.peek();
-        while(curr.value == "constructor" || 
-              curr.value == "function" || 
-              curr.value == "method") {
-            this.subType = curr.value;
+        curr = this.tok.peek().value;
+        while(curr == "constructor" || 
+              curr == "function" || 
+              curr == "method") {
             this.compileSubroutineDec();    
-            curr = this.tok.peek();
+            curr = this.tok.peek().value;
         }
         this.expect("}");
     }
@@ -160,6 +160,7 @@ class Compiler {
     compileReturnStatement() {
         this.expect("return");
         if(this.tok.peek().value !== ";") this.compileExpression();
+        else this.vm.emitPush("constant",0);
         this.expect(";");
         this.vm.emitReturn();
     }
@@ -176,11 +177,12 @@ class Compiler {
         this.expect("var");
         const type = this.compileType();
         let varName = this.expect(true,"identifier").value;
-        this.
+        this.mst.define(varName,type,"local");
         let curr = this.tok.peek();
         while(curr.value != ";") {
             this.expect(",");
-            this.expect(true,"identifier");
+            varName = this.expect(true,"identifier");
+            this.mst.define(varName,type,"local");
             curr = this.tok.peek();
         }
         this.expect(";");
@@ -197,16 +199,22 @@ class Compiler {
         this.expect("}");
     }
 
+    genSubname() {
+        return `${this.className}.${this.subName}`;
+    }
+
     compileSubroutineDec() {
-        this.emit(this.tok.next());
+        this.subType = this.tok.next().value;
         let curr = this.tok.peek();
-        if(curr.value == "void") this.emit(this.tok.next());
-        else this.compileType();
-        const subName = this.expect(true,"identifier").value;
+        let type;
+        if(curr.value == "void") type = this.tok.next().value;
+        else type = this.compileType();
+        this.subName = this.expect(true,"identifier").value;
         this.expect("(");
         this.compileParameterList();
         this.expect(")");
         this.compileSubroutineBody();
+        this.mst.reset();
     }
 
 
@@ -286,6 +294,11 @@ class Compiler {
     }
 }
 
+const comp = new Compiler(fs.readFileSync(`./Seven.jack`).toString());
+console.log(comp.compile());
+console.log(comp.mst);
+console.log(comp.cst);
+
 function main(args) {
     if(fs.existsSync(args[0]) && fs.lstatSync(args[0]).isDirectory()) {
         const files = fs.readdirSync(args[0]).filter(f => f.endsWith(".jack"));
@@ -315,5 +328,5 @@ function main(args) {
     }
 }
 
-main(process.argv.slice(2));
+// main(process.argv.slice(2));
 module.exports = Compiler;
