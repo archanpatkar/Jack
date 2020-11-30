@@ -31,7 +31,8 @@ class Compiler {
         this.cst = new SymbolTable(null);
         this.mst = new SymbolTable(this.cst);
         this.className = null;
-        this.functionName = null;
+        this.subName = null;
+        this.subType = null;
     }
 
     expect(val, type) {
@@ -48,7 +49,6 @@ class Compiler {
     }
 
     compileClass() {
-        this.emit("<class>\n");
         this.expect("class");
         this.className = this.expect(true,"identifier").value;
         this.expect("{");
@@ -61,56 +61,58 @@ class Compiler {
         while(curr.value == "constructor" || 
               curr.value == "function" || 
               curr.value == "method") {
+            this.subType = curr.value;
             this.compileSubroutineDec();    
             curr = this.tok.peek();
         }
         this.expect("}");
-        this.emit("</class>\n");
     }
 
     compileType() {
         let curr = this.tok.peek();
-        if(curr.value == "int") this.expect("int");
-        else if(curr.value == "char") this.expect("char");
-        else if(curr.value == "boolean") this.expect("boolean");
-        else this.expect(true,"identifier");
+        if(curr.value == "int") 
+            return this.expect("int").value;
+        else if(curr.value == "char") 
+            return this.expect("char").value;
+        else if(curr.value == "boolean") 
+            return this.expect("boolean").value;
+        return this.expect(true,"identifier").value;
     }
 
     compileClassVarDec() {
-        this.emit("<classVarDec>\n");
-        this.emit(this.tok.next());
-        this.compileType();
-        const varName = this.expect(true,"identifier").value;
+        const kind = this.tok.next().value;
+        const type = this.compileType();
+        let varName = this.expect(true,"identifier").value;
+        this.cst.define(varName,type,kind);
         let curr = this.tok.peek();
         while(curr.value != ";") {
             this.expect(",");
-            this.expect(true,"identifier");
+            varName = this.expect(true,"identifier").value;
+            this.cst.define(varName,type,kind);
             curr = this.tok.peek();
         }
         this.expect(";");
-        this.emit("</classVarDec>\n");
     }
 
     compileParameterList() {
-        this.emit("<parameterList>\n");
         if(this.tok.peek().value !== ")") {
-            this.compileType();
-            this.expect(true,"identifier");
+            let type = this.compileType();
+            let varName = this.expect(true,"identifier");
+            this.mst.define(varName,type,"argument");
             let curr = this.tok.peek();
             while(curr.value != ")") {
                 this.expect(",");
-                this.compileType();
-                this.expect(true,"identifier");
+                type = this.compileType();
+                varName = this.expect(true,"identifier");
+                this.mst.define(varName,type,"argument");
                 curr = this.tok.peek();
             }
         }
-        this.emit("</parameterList>\n");
     }
 
     compileLetStatement() {
-        this.emit("<letStatement>\n");
         this.expect("let");
-        const varName = this.expect(true,"identifier").value;
+        let varName = this.expect(true,"identifier").value;
         let curr = this.tok.peek();
         if(curr.value == "[") {
             this.expect("[");
@@ -120,11 +122,9 @@ class Compiler {
         this.expect("=");
         this.compileExpression();
         this.expect(";");
-        this.emit("</letStatement>\n");
     }
 
     compileIfStatement() {
-        this.emit("<ifStatement>\n");
         this.expect("if");
         this.expect("(");
         this.compileExpression();
@@ -138,11 +138,9 @@ class Compiler {
             this.compileStatements();
             this.expect("}");
         }
-        this.emit("</ifStatement>\n");
     }
 
     compileWhileStatement() {
-        this.emit("<whileStatement>\n");
         this.expect("while");
         this.expect("(");
         this.compileExpression();
@@ -150,40 +148,35 @@ class Compiler {
         this.expect("{");
         this.compileStatements();
         this.expect("}");
-        this.emit("</whileStatement>\n");
     }
 
     compileDoStatement() {
-        this.emit("<doStatement>\n");
         this.expect("do");
         this.compileSubroutineCall();
         this.expect(";");
-        this.emit("</doStatement>\n");
+        this.vm.emitPop("temp",0);
     }
 
     compileReturnStatement() {
-        this.emit("<returnStatement>\n");
         this.expect("return");
         if(this.tok.peek().value !== ";") this.compileExpression();
         this.expect(";");
-        this.emit("</returnStatement>\n");
+        this.vm.emitReturn();
     }
 
     compileStatements() {
-        this.emit("<statements>\n");
         let curr = this.tok.peek();
         while(curr.value in stp) {
             this[stp[curr.value]]();
             curr = this.tok.peek();
         }
-        this.emit("</statements>\n");
     }
 
     compileVarDec() {
-        this.emit("<varDec>\n");
         this.expect("var");
-        this.compileType();
-        this.expect(true,"identifier");
+        const type = this.compileType();
+        let varName = this.expect(true,"identifier").value;
+        this.
         let curr = this.tok.peek();
         while(curr.value != ";") {
             this.expect(",");
@@ -191,11 +184,9 @@ class Compiler {
             curr = this.tok.peek();
         }
         this.expect(";");
-        this.emit("</varDec>\n");
     }
 
     compileSubroutineBody() {
-        this.emit("<subroutineBody>\n");
         this.expect("{");
         let curr = this.tok.peek();
         while(curr.value == "var") {
@@ -204,11 +195,9 @@ class Compiler {
         }
         this.compileStatements();
         this.expect("}");
-        this.emit("</subroutineBody>\n");
     }
 
     compileSubroutineDec() {
-        this.emit("<subroutineDec>\n");
         this.emit(this.tok.next());
         let curr = this.tok.peek();
         if(curr.value == "void") this.emit(this.tok.next());
@@ -218,13 +207,11 @@ class Compiler {
         this.compileParameterList();
         this.expect(")");
         this.compileSubroutineBody();
-        this.emit("</subroutineDec>\n");
     }
 
 
 
     compileExpressionList() {
-        this.emit("<expressionList>\n");
         let next = this.tok.peek();
         if(next.value !== ")") {
             this.compileExpression();
@@ -235,7 +222,6 @@ class Compiler {
                 next = this.tok.peek();
             } 
         }   
-        this.emit("</expressionList>\n");
     }
 
     compileSubroutineCall() {
@@ -251,7 +237,6 @@ class Compiler {
     }
 
     compileTerm() {
-        this.emit("<term>\n");
         let curr = this.tok.peek();
         if(curr.value == "(") {
             this.expect("(","symbol");
@@ -286,12 +271,10 @@ class Compiler {
             else this.expect(true,"identifier");
         }
         else throw new SyntaxError("Something wrong!");
-        this.emit("</term>\n");
     }
 
 
     compileExpression() {
-        this.emit("<expression>\n");
         this.compileTerm();
         let curr = this.tok.peek();
         while(bop.includes(curr.value)) {
@@ -300,7 +283,6 @@ class Compiler {
                 this.compileTerm();
             curr = this.tok.peek();
         }
-        this.emit("</expression>\n");
     }
 }
 
