@@ -1,9 +1,16 @@
 const Tokenizer = require("./tokenizer");
+const SymbolTable = require("./symtab");
+const VMEmitter = require("./vmcode");
 
 const termend = [")","}","]",";",","];
-const bop = ["+","-","*","/","&","|","<",">","="]
-const uop = ["-","~"]
-const kwc = ["true","false","null","this"]
+const bop = ["+","-","*","/","&","|","<",">","="];
+const uop = ["-","~"];
+const kwc = ["true","false","null","this"];
+const kwc_map = {
+    "true": 1,
+    "false": 0,
+    "null": 0
+};
 const stp = {
     "let": "compileLetStatement",
     "if": "compileIfStatement",
@@ -14,43 +21,36 @@ const stp = {
 
 class Compiler {
     constructor(code) {
-        if(code) {
-            this.code = code;
-            this.tok = new Tokenizer(code);
-        }
-        this.output = "";
+        if(code) this.setup(code);
     }
 
-    emit(cmd) {
-        if(cmd instanceof Object) {
-            this.output += `<${cmd.type}> ${token_val(cmd)} </${cmd.type}>\n`;
-        }
-        else this.output += cmd;
+    setup(code) {
+        this.code = code;
+        this.tok = new Tokenizer(code);
+        this.vm = new VMEmitter();
+        this.cst = new SymbolTable(null);
+        this.mst = new SymbolTable(this.cst);
+        this.className = null;
+        this.functionName = null;
     }
 
     expect(val, type) {
         const curr = this.tok.next();
-        if(curr.value == val || curr.type == type) 
-        {
-            this.emit(curr);
-            return curr;
-        }
+        if(curr.value == val || curr.type == type) return curr;
         throw new SyntaxError(`Expected ${type?type:""} ${val}`);
     }
 
     compile(code) {
-        if(!this.code) {
-            this.code = code;
-            this.tok = new Tokenizer(code);
-        }
+        if(!this.code || code) this.setup(code);
+        else throw new Error("No code given!");
         this.compileClass();
-        return this.output;
+        return this.vm.compgen();
     }
 
     compileClass() {
         this.emit("<class>\n");
         this.expect("class");
-        const className = this.expect(true,"identifier").value;
+        this.className = this.expect(true,"identifier").value;
         this.expect("{");
         let curr = this.tok.peek();
         while(curr.value == "static" || curr.value == "field") {
@@ -267,7 +267,13 @@ class Compiler {
         else if(curr.type == "stringConstant") 
             this.expect(true,"stringConstant");
         else if(kwc.includes(curr.value)) 
+        {
             this.expect(true,"keyword");
+            if(curr.value in kwc_map) {
+                this.vm.emitPush("constant", kwc_map[curr.value]);
+                if(curr.value == "true") this.vm.emitUnaryOp("-");
+            }
+        }
         else if(curr.type == "identifier") {
             let temp = this.tok.peek(1);
             if(temp.value == "(" || temp.value == ".") this.compileSubroutineCall()
