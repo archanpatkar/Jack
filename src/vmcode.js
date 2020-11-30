@@ -41,7 +41,7 @@ class VMEmitter {
         this.output.push(push(seg,i));
     }
 
-    emitPush(seg,i) {
+    emitPop(seg,i) {
         this.output.push(pop(seg,i));
     }
 
