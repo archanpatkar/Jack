@@ -34,6 +34,11 @@ class Compiler {
         this.className = null;
         this.subName = null;
         this.subType = null;
+        this.count = {
+            "if":0,
+            "else":0,
+            "while":0,
+        };
     }
 
     expect(val, type) {
@@ -43,10 +48,12 @@ class Compiler {
     }
 
     compile(code) {
-        if(code) this.setup(code);
-        // else throw new Error("No code given!");
-        this.compileClass();
-        return this.vm.compgen();
+        if(this.code || code) {
+            if(code) this.setup(code);
+            this.compileClass();
+            return this.vm.compgen();
+        }
+        throw new Error("No code given!");
     }
 
     compileClass() {
@@ -97,17 +104,34 @@ class Compiler {
     compileParameterList() {
         if(this.tok.peek().value !== ")") {
             let type = this.compileType();
-            let varName = this.expect(true,"identifier");
+            if(this.subType == "method") {
+                this.mst.define("this",this.className,"argument");
+            }
+            let varName = this.expect(true,"identifier").value;
             this.mst.define(varName,type,"argument");
             let curr = this.tok.peek();
             while(curr.value != ")") {
                 this.expect(",");
                 type = this.compileType();
-                varName = this.expect(true,"identifier");
+                varName = this.expect(true,"identifier").value;
                 this.mst.define(varName,type,"argument");
                 curr = this.tok.peek();
             }
         }
+    }
+
+    readVar(name) {
+        const type = this.mst.kind(name);
+        if(type == "field")
+            this.vm.emitPush("this",this.mst.index(name));
+        else this.vm.emitPush(type,this.mst.index(name));
+    }
+
+    writeVar(name) {
+        const type = this.mst.kind(name);
+        if(type == "field")
+            this.vm.emitPop("this",this.mst.index(name));
+        else this.vm.emitPop(type,this.mst.index(name));
     }
 
     compileLetStatement() {
@@ -115,39 +139,67 @@ class Compiler {
         let varName = this.expect(true,"identifier").value;
         let curr = this.tok.peek();
         if(curr.value == "[") {
+            this.readVar(varName);
             this.expect("[");
             this.compileExpression();
             this.expect("]");
+            this.vm.emitBinaryOp("+");
         }
         this.expect("=");
         this.compileExpression();
         this.expect(";");
+        if(curr.value == "[") {
+            this.vm.emitPop("temp",0);
+            this.vm.emitPop("pointer",1);
+            this.vm.emitPush("that",0);
+            this.vm.emitPush("temp",0);
+            this.vm.emitPop("that",0);
+        }
+        else this.writeVar(varName);
+    }
+
+    genLabel(type) {
+        return `${this.className}$${this.subName}.${type}${this.count[type]++}`;
     }
 
     compileIfStatement() {
+        const L1 = this.genLabel("if");
+        const L2 = this.genLabel("else");
         this.expect("if");
         this.expect("(");
         this.compileExpression();
+        this.vm.emitUnaryOp("~");
+        this.vm.emitIf(L1);
         this.expect(")");
         this.expect("{");
         this.compileStatements();
         this.expect("}");
+        this.vm.emitGoto(L2);
+        this.vm.emitLabel(L1);
         if(this.tok.peek().value == "else") {
             this.expect("else");
             this.expect("{");
             this.compileStatements();
             this.expect("}");
         }
+        this.vm.emitLabel(L2);
     }
 
     compileWhileStatement() {
+        const L1 = this.genLabel("while");
+        const L2 = this.genLabel("while");
+        this.vm.emitLabel(L1);
         this.expect("while");
         this.expect("(");
-        this.compileExpression();
+        this.compileExpression();        
         this.expect(")");
+        this.vm.emitUnaryOp("~");
+        this.vm.emitIf(L2);
         this.expect("{");
         this.compileStatements();
         this.expect("}");
+        this.vm.emitGoto(L1);
+        this.vm.emitLabel(L2);
     }
 
     compileDoStatement() {
@@ -181,7 +233,7 @@ class Compiler {
         let curr = this.tok.peek();
         while(curr.value != ";") {
             this.expect(",");
-            varName = this.expect(true,"identifier");
+            varName = this.expect(true,"identifier").value;
             this.mst.define(varName,type,"local");
             curr = this.tok.peek();
         }
@@ -194,6 +246,16 @@ class Compiler {
         while(curr.value == "var") {
             this.compileVarDec();
             curr = this.tok.peek();
+        }
+        this.vm.emitFunction(this.genSubname(),this.mst.total("local"));
+        if(this.subType == "method") {
+            this.vm.emitPush("argument",0);
+            this.vm.emitPop("pointer",0);
+        }
+        else if(this.subType == "constructor") {
+            this.vm.emitPush("constant",this.cst.total("field"));
+            this.vm.emitCall("Memory.alloc",1);
+            this.vm.emitPop("pointer",0);
         }
         this.compileStatements();
         this.expect("}");
@@ -217,50 +279,65 @@ class Compiler {
         this.mst.reset();
     }
 
-
-
     compileExpressionList() {
+        let n = 0;
+        if(this.subType == "method") n++;
         let next = this.tok.peek();
         if(next.value !== ")") {
             this.compileExpression();
             next = this.tok.peek();
+            n++;
             while(next.value !== ")") {
                 this.expect(",");
                 this.compileExpression();
+                n++;
                 next = this.tok.peek();
             } 
-        }   
+        }  
+        return n; 
     }
 
     compileSubroutineCall() {
-        const name1 = this.expect(true,"identifier");
+        let name = this.expect(true,"identifier").value;
         const next = this.tok.peek();
         if(next.value == ".") {
             this.expect(".");
-            const name2 = this.expect(true,"identifier");
+            if(this.mst.isDefined(name)) this.readVar(name);
+            name += "."+this.expect(true,"identifier").value;
         }
         this.expect("(");
-        this.compileExpressionList();
+        const nargs = this.compileExpressionList();
         this.expect(")");
+        this.vm.emitCall(name,nargs);
     }
 
     compileTerm() {
         let curr = this.tok.peek();
         if(curr.value == "(") {
-            this.expect("(","symbol");
+            this.expect("(");
             this.compileExpression();
             this.expect(")");
         }
         else if(uop.includes(curr.value)) {
             this.expect(curr.value);
             this.compileTerm();
+            this.vm.emitUnaryOp(curr.value);
         }
-        else if(curr.type == "integerConstant") 
+        else if(curr.type == "integerConstant") {
             this.expect(true,"integerConstant");
-        else if(curr.type == "stringConstant") 
+            this.vm.emitPush("constant",curr.value);
+        }
+        else if(curr.type == "stringConstant") {
             this.expect(true,"stringConstant");
-        else if(kwc.includes(curr.value)) 
-        {
+            const len = curr.value.length;
+            this.vm.emitPush("constant",len);
+            this.vm.emitCall("String.new",1);
+            for(let i = 0;i < len;i++) {
+                this.vm.emitPush("constant",curr.value.charCodeAt(i));
+                this.vm.emitCall("String.appendChar",2);
+            }
+        }
+        else if(kwc.includes(curr.value)) {
             this.expect(true,"keyword");
             if(curr.value in kwc_map) {
                 this.vm.emitPush("constant", kwc_map[curr.value]);
@@ -271,14 +348,21 @@ class Compiler {
             let temp = this.tok.peek(1);
             if(temp.value == "(" || temp.value == ".") this.compileSubroutineCall()
             else if(temp.value == "[") {
-                const vname = this.expect(true,"identifier");
+                const varName = this.expect(true,"identifier").value;
+                this.readVar(varName);
                 this.expect("[");
                 this.compileExpression();
                 this.expect("]");
+                this.vm.emitBinaryOp("+");
+                this.vm.emitPop("pointer",1);
+                this.vm.emitPush("that",0);
             }
-            else this.expect(true,"identifier");
+            else {
+                const varName = this.expect(true,"identifier").value;
+                this.readVar(varName);
+            }
         }
-        else throw new SyntaxError("Something wrong!");
+        else throw new SyntaxError("Something wrong in term!");
     }
 
 
@@ -286,47 +370,41 @@ class Compiler {
         this.compileTerm();
         let curr = this.tok.peek();
         while(bop.includes(curr.value)) {
-            this.expect(curr.value,"symbol");
-            if(!termend.includes(this.tok.peek().value)) 
+            this.expect(curr.value);
+            if(!termend.includes(this.tok.peek().value)) {
                 this.compileTerm();
+                this.vm.emitBinaryOp(curr.value);
+            }
             curr = this.tok.peek();
         }
     }
 }
 
-const comp = new Compiler(fs.readFileSync(`./Seven.jack`).toString());
-console.log(comp.compile());
-console.log(comp.mst);
-console.log(comp.cst);
-
 function main(args) {
     if(fs.existsSync(args[0]) && fs.lstatSync(args[0]).isDirectory()) {
         const files = fs.readdirSync(args[0]).filter(f => f.endsWith(".jack"));
         const path = args[0].endsWith("/")?args[0]:`${args[0]}/`;
-        console.log("Reading...");
-        const data = files.map(file => {
+        console.log("Compiling...");
+        files.map(file => {
             console.log(file);
             const filename = file.split(".")[0];
             const code = fs.readFileSync(`${path}${file}`).toString();
-            const compiler = new Compiler(code);
-            const output = compiler.compile();
-            fs.writeFileSync(`${path}${filename}T.xml`,compiler.tok.out);
-            fs.writeFileSync(`${path}${filename}.xml`,output);
+            const output = new Compiler(code).compile();
+            fs.writeFileSync(`${path}${filename}.vm`,output);
         });
     }
     else {
-        console.log("Reading...");
+        console.log("Compiling...");
         const dirs = args[0].split("/");
         const filename = dirs[dirs.length-1].split(".")[0];
+        console.log(filename);
         const code = fs.readFileSync(args[0]).toString();
-        const compiler = new Compiler(code);
-        const output = compiler.compile();
+        const output = new Compiler(code).compile();
         dirs.pop();
         const path = dirs.join("/");
-        fs.writeFileSync(`${path}/${filename}T.xml`,compiler.tok.out);
-        fs.writeFileSync(`${path}/${filename}.xml`,output);
+        fs.writeFileSync(`${path}/${filename}.vm`,output);
     }
 }
 
-// main(process.argv.slice(2));
+main(process.argv.slice(2));
 module.exports = Compiler;
