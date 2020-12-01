@@ -6,6 +6,8 @@ const bopmap = {
     "<":"lt",
     "&":"and",
     "|":"or",
+    "*":"call Math.multiply 2",
+    "/":"call Math.divide 2"
 };
 
 const uopmap = {
@@ -15,13 +17,13 @@ const uopmap = {
 
 const push = (seg,i) => `push ${seg} ${i}`;
 const pop = (seg,i) => `pop ${seg} ${i}`;
-const bop = (op) => `${bop[op]}`;
-const uop = (op) => `${uop[op]}`;
+const bop = (op) => `${bopmap[op]}`;
+const uop = (op) => `${uopmap[op]}`;
 const label = (lab) => `label ${lab}`;
 const goto = (lab) => `goto ${lab}`;
 const ifgoto = (lab) => `if-goto ${lab}`;
-const call = (name,args) => `call ${name} ${args}`;
-const functiondef = (name,lcls) => `function ${name}\n${lcls}`;
+const call = (name,args) => `call ${name} ${args?args:0}`;
+const functiondef = (name,lcls) => `function ${name} ${lcls}`;
 const returnop = () => `return`;
 
 class VMEmitter {
